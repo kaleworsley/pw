@@ -1,0 +1,4 @@
+pw
+==
+
+CLI password manager.
