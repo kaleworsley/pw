@@ -1,43 +1,96 @@
 #!/bin/bash
 
-if [ -f $HOME/.pwrc ] ; then
-  source $HOME/.pwrc
-else
-  echo "~/.pwrc file not found"
+PASSWORDS_DIRECTORY=${PASSWORDS_DIRECTORY-~/.pw}
+PW_CONFIG_FILE=${PW_CONFIG_FILE-~/.pwrc}
+PW_LENGTH=${PW_LENGTH-32}
+
+usage() {
+  cat <<EOT
+pw [ OPTIONS ] [new|show|edit] name
+
+OPTIONS
+
+  -c config_file        - Use config_file for configuration
+                          (Default: ~/.pwrc)
+  -d password_directory - Directory to store encrypted passwords
+                          (Default: ~/.pw)
+  -h                    - Show this help
+  -l length             - Length of generated passwords
+                          (Default: 32)
+
+EOT
+}
+
+while getopts "c:d:hl:" OPT ; do
+  case $OPT in
+    c)  PW_CONFIG_FILE=$OPTARG
+        ;;
+    d)  PASSWORDS_DIRECTORY=$OPTARG
+        ;;
+    h)  usage
+        exit 0
+        ;;
+    l)  PW_LENGTH=$OPTARG
+        ;;
+    *)  usage
+        exit 1
+        ;;
+  esac
+done
+
+shift $(($OPTIND-1))
+
+command=$1
+name=${2-$command}
+
+if [ -z "$name" ] ; then
+  usage
   exit 1
 fi
 
-if [ "`uname`" = "Darwin" ] ; then
-  COPY_CMD="pbcopy"
-else
-  COPY_CMD="xsel --clipboard --input"
-fi
+[ -f $PW_CONFIG_FILE ] && . $PW_CONFIG_FILE
 
-if [ "$1" = "" ] ; then
-  echo "Usage: pw [new|show|edit] [PASSWORD NAME]"
-  exit 0
-fi
-
-PW=`pwgen -n 32 1`
-if [ "$1" = "gen" ] ; then
-  echo $PW
-else
-  if [ "$1" = "new" ] ; then
-    if [ -f "$PASSWORDS_DIRECTORY/$2.gpg" ] ; then
-      echo "File exists."
-    else
-      echo -e "$2\n\nPassword: $PW\nUsername: $DEFAULT_USERNAME\nEmail: $DEFAULT_EMAIL" | gpg -r $GPG_NAME -e > "$PASSWORDS_DIRECTORY/$2.gpg"
-      vim "$PASSWORDS_DIRECTORY/$2.gpg"
-    fi
+default_copy_command() {
+  if [ "`uname`" = "Darwin" ] ; then
+    echo "pbcopy"
   else
-    if [ "$1" = "show" ] ; then
-      gpg -d "$PASSWORDS_DIRECTORY/$2"
-    else
-      if [ "$1" = "edit" ] ; then
-        $EDITOR "$PASSWORDS_DIRECTORY/$2"
-      else
-        gpg -d "$PASSWORDS_DIRECTORY/$1" | grep '[Pp]assword' | sed -e 's/[Pp]assword:[ \t]*//' -e 's/[ \t\n\r]$//' | head -1 | $COPY_CMD
-      fi
-    fi
+    echo "xsel --clipboard --input"
   fi
+}
+
+COPY_CMD=${COPY_CMD-$(default_copy_command)}
+
+generate_password() {
+  pwgen -n $PW_LENGTH 1
+}
+
+if [ ! -d "$PASSWORDS_DIRECTORY" ] ; then
+  mkdir -p $PASSWORDS_DIRECTORY
 fi
+
+set -e
+
+case $command in
+
+  "new")
+    if [ -f "$PASSWORDS_DIRECTORY/$name.gpg" ] ; then
+      echo "$PASSWORDS_DIRECTORY/$name.gpg: File exists."
+      exit 1
+    fi
+    echo -e "$name\n\nPassword: $(generate_password)\nUsername: $DEFAULT_USERNAME\nEmail: $DEFAULT_EMAIL" | gpg -r $GPG_NAME -e > "$PASSWORDS_DIRECTORY/$name.gpg"
+    $EDITOR "$PASSWORDS_DIRECTORY/$name.gpg"
+    ;;
+
+  "show")
+    gpg -d "$PASSWORDS_DIRECTORY/$name"
+    ;;
+
+  "edit")
+    $EDITOR "$PASSWORDS_DIRECTORY/$name"
+    ;;
+
+  *)
+    gpg -d "$PASSWORDS_DIRECTORY/$name" | grep '[Pp]assword' | sed -e 's/[Pp]assword:[ \t]*//' -e 's/[ \t\n\r]$//' | head -1 | $COPY_CMD
+    ;;
+
+esac
