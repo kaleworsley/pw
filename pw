@@ -1,0 +1,43 @@
+#!/bin/bash
+
+if [ -f $HOME/.pwrc ] ; then
+  source $HOME/.pwrc
+else
+  echo "~/.pwrc file not found"
+  exit 1
+fi
+
+if [ "`uname`" = "Darwin" ] ; then
+  COPY_CMD="pbcopy"
+else
+  COPY_CMD="xsel --clipboard --input"
+fi
+
+if [ "$1" = "" ] ; then
+  echo "Usage: pw [new|show|edit] [PASSWORD NAME]"
+  exit 0
+fi
+
+PW=`pwgen -n 32 1`
+if [ "$1" = "gen" ] ; then
+  echo $PW
+else
+  if [ "$1" = "new" ] ; then
+    if [ -f "$PASSWORDS_DIRECTORY/$2.gpg" ] ; then
+      echo "File exists."
+    else
+      echo -e "$2\n\nPassword: $PW\nUsername: $DEFAULT_USERNAME\nEmail: $DEFAULT_EMAIL" | gpg -r $GPG_NAME -e > "$PASSWORDS_DIRECTORY/$2.gpg"
+      vim "$PASSWORDS_DIRECTORY/$2.gpg"
+    fi
+  else
+    if [ "$1" = "show" ] ; then
+      gpg -d "$PASSWORDS_DIRECTORY/$2"
+    else
+      if [ "$1" = "edit" ] ; then
+        $EDITOR "$PASSWORDS_DIRECTORY/$2"
+      else
+        gpg -d "$PASSWORDS_DIRECTORY/$1" | grep '[Pp]assword' | sed -e 's/[Pp]assword:[ \t]*//' -e 's/[ \t\n\r]$//' | head -1 | $COPY_CMD
+      fi
+    fi
+  fi
+fi
